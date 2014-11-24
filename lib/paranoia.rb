@@ -130,17 +130,23 @@ class ActiveRecord::Base
     alias :destroy! :destroy
     alias :delete! :delete
     def really_destroy!
-      dependent_reflections = self.reflections.select do |name, reflection|
+      dependent_reflections = self.class.reflections.select do |name, reflection|
         reflection.options[:dependent] == :destroy
       end
       if dependent_reflections.any?
         dependent_reflections.each do |name, _|
           associated_records = self.send(name)
-          # Paranoid models will have this method, non-paranoid models will not
-          associated_records = associated_records.with_deleted if associated_records.respond_to?(:with_deleted)
-          associated_records.each(&:really_destroy!)
+          # has_one association can return nil
+          if associated_records && associated_records.respond_to?(:with_deleted)
+            # Paranoid models will have this method, non-paranoid models will not
+            associated_records.with_deleted.each(&:really_destroy!)
+            self.send(name).reload
+          elsif associated_records && !associated_records.respond_to?(:each) # single record
+            associated_records.really_destroy!
+          end
         end
       end
+      touch_paranoia_column if ActiveRecord::VERSION::STRING >= "4.1"
       destroy!
     end
 
